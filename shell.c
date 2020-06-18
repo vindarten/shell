@@ -17,6 +17,11 @@ struct list {
 
 struct cmnd {
 	struct list *fstWrd;
+	struct cmnd *next;
+};
+
+struct cmnds {
+	struct cmnd *fstCmd;
 	char *input;
 	char *output;
 	int append;
@@ -25,6 +30,7 @@ struct cmnd {
 };
 
 struct hlpStr {
+	struct word *fstLet;
 	char llast;
 	char last;
 	char next;
@@ -33,36 +39,52 @@ struct hlpStr {
 	int lt;
 };
 
-enum {input, output};
-enum {right, unbQts, inSpec, outSpec, redir, nlUnexp, wrArg};
+struct pidList {
+	int pid;
+	struct pidList *next;
+};
 
-void entLet(void);
+enum {input, output};
+enum {right, unbQts, inSpec, outSpec, redir, nlUnexp, wrArg, nllCmd};
+
 void rmvZmb(int x);
-void printe(int err);
-void addLet(struct word **first, char a);
-void delLet(struct word **first);
-void addWrd(struct list **first, struct word **fstLet);
-void delWrd(struct list **first);
-void cllCmd(struct cmnd *cmd, char **arrWrd);
-void chdHnd(struct cmnd *cmd, char **arrWrd);
-void clsfdc(struct cmnd *cmd, int fdi, int fdo);
-void clsfdp(struct cmnd *cmd, int fdi, int fdo);
-void prpCll(struct cmnd **cmd, char a);
-void ersVar(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar);
-void spcHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar);
-void endHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar);
-int cllHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar);
-int ltsHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar);
-int gtsHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar);
-int openfd(struct cmnd *cmd, int i);
-int numLet(struct word *first);
-int numWrd(struct list *first);
-int cmpStr(const char *a, const char *b);
+void entLet(void);
+void initAll(struct cmnds *cmds, struct hlpStr *av);
+char entChr(struct hlpStr *av);
+int cllHnd(struct cmnds *cmds, struct hlpStr *av);
 int tstCon(char a);
-char entChr(struct hlpStr *auxVar);
-char *copyWrd(struct word **first);
-char **copyLst(struct list *first); 
-struct cmnd *crtCmd(void);
+void addLet(struct word **fstLet, char a);
+void spcHnd(struct cmnds *cmds, struct hlpStr *av);
+void addWrd(struct list **fstWrd, struct word **fstLet);
+char *copyWrd(struct word **fstLet);
+int numLet(struct word *fstLet);
+int ltsHnd(struct cmnds *cmds, struct hlpStr *av);
+int gtsHnd(struct cmnds *cmds, struct hlpStr *av);
+int barHnd(struct cmnds *cmds, struct hlpStr *av);
+void endHnd(struct cmnds *cmds, struct hlpStr *av);
+void printe(int err);
+void prpCll(struct cmnds *cmds);
+char **copyLst(struct list *fstWrd); 
+int numWrd(struct list *fstWrd);
+void cllCmd(struct cmnds *cmds, char **arrWrd);
+int cmpStr(const char *a, const char *b);
+void chdHnd(char **arrWrd);
+int openfd(struct cmnds *cmds, int i);
+void clsfdc(struct cmnds *cmds, int fdi, int fdo);
+void clsfdp(struct cmnds *cmds, int fdi, int fdo);
+void cllCnv(struct cmnds *cmds);
+int fstRun(struct cmnds *cmds, int fdio[2]);
+struct cmnd *midRun(struct cmnds *cmds, struct pidList **pids, int fdio[2]);
+int lstRun(struct cmnds *cmds, struct cmnd *help, int fd[2]);
+void dupCls(int fdio, int fd[2]);
+void flipList(struct cmnds *cmds);
+int numCmd(struct cmnd *fstCmd);
+void addPid(struct pidList **pids, int pid);
+void delPid(struct pidList **pids, int pid);
+void ersVar(struct cmnds *cmds, struct hlpStr *av);
+void delCmd(struct cmnd **fstCmd);
+void delWrd(struct list **fstWrd);
+void delLet(struct word **fstLet);
 
 int main()
 {
@@ -81,294 +103,262 @@ void rmvZmb(int x)
 
 void entLet(void)
 {
-	struct cmnd *cmd = NULL;
-	struct word *fstLet = NULL;
-	struct hlpStr auxVar;
-	ersVar(NULL, NULL, &auxVar);
-	cmd = crtCmd();
-	while(entChr(&auxVar) != EOF) {
-		if (!(*cmd).err) {
-			if (cllHnd(&cmd, &fstLet, &auxVar)) {
+	struct cmnds cmds;
+	struct hlpStr av;
+	initAll(&cmds, &av);
+	while(entChr(&av) != EOF) {
+		if (!cmds.err) {
+			if (cllHnd(&cmds, &av)) {
 				continue;
 			}
 		}
-		if (auxVar.next == '&' || auxVar.next == '\n') {
-			endHnd(&cmd, &fstLet, &auxVar);
-			if (auxVar.next == '\n') {
+		if (av.next == '&' || av.next == '\n') {
+			endHnd(&cmds, &av);
+			if (av.next == '\n') {
 				putchar('>');
 			}
-			ersVar(&cmd, &fstLet, &auxVar);
+			ersVar(&cmds, &av);
 			continue;
 		}
-		addLet(&fstLet, auxVar.next);
+		addLet(&av.fstLet, av.next);
 	}
-	ersVar(&cmd, &fstLet, &auxVar);
-	free(cmd);
+	ersVar(&cmds, &av);
 }
 
-void ersVar(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar)
+void initAll(struct cmnds *cmds, struct hlpStr *av)
 {
-	if (cmd != NULL && fstLet != NULL) {
-		delWrd(&((**cmd).fstWrd));
-		delLet(fstLet); 
-		if ((**cmd).output != NULL) {
-			free((**cmd).output);
-			(**cmd).output = NULL;
-		}
-		if ((**cmd).input != NULL) {	
-			free((**cmd).input);
-			(**cmd).input = NULL;
-		}
-		(**cmd).append = (**cmd).bckGrd = (**cmd).err = 0;
-	}
-	(*auxVar).llast = (*auxVar).last = (*auxVar).next = ' ';	
-	(*auxVar).inQts = (*auxVar).gt = (*auxVar).lt = 0;
+	(*cmds).fstCmd = malloc(sizeof(*(*cmds).fstCmd));
+	(*(*cmds).fstCmd).fstWrd = NULL;
+	(*(*cmds).fstCmd).next = NULL;
+	(*cmds).input = (*cmds).output = NULL;
+	(*cmds).append = (*cmds).bckGrd = (*cmds).err = 0;
+	(*av).fstLet = NULL;
+	(*av).llast = (*av).last = (*av).next = ' ';	
+	(*av).inQts = (*av).gt = (*av).lt = 0;
 }
 
-struct cmnd *crtCmd(void)
+char entChr(struct hlpStr *av)
 {
-	struct cmnd *cmd;
-	cmd = malloc(sizeof(*cmd));
-	(*cmd).fstWrd = NULL;
-	(*cmd).input = (*cmd).output = NULL;
-	(*cmd).append = (*cmd).bckGrd = (*cmd).err = 0;
-	return cmd;
+	(*av).llast = (*av).last;
+	(*av).last = (*av).next;
+	(*av).next = getchar();
+	return (*av).next;
 }
 
-char entChr(struct hlpStr *auxVar)
-{
-	(*auxVar).llast = (*auxVar).last;
-	(*auxVar).last = (*auxVar).next;
-	(*auxVar).next = getchar();
-	return (*auxVar).next;
-}
-
-int cllHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar)
+int cllHnd(struct cmnds *cmds, struct hlpStr *av)
 {
 	char a;
-	a = (*auxVar).next;
+	a = (*av).next;
 	if (a == '"') {
-		(*auxVar).inQts = !((*auxVar).inQts);
+		(*av).inQts = !((*av).inQts);
 		return -1;
 	}
-	if (tstCon(a) && (*auxVar).inQts) {
-		addLet(fstLet, a);
+	if (tstCon(a) && (*av).inQts) {
+		addLet(&(*av).fstLet, a);
 		return -1;
 	}
 	if (a == ' ') {
-		spcHnd(cmd, fstLet, auxVar);
+		spcHnd(cmds, av);
 		return -1;
 	}
 	if (a == '<') {
-		(**cmd).err = ltsHnd(cmd, fstLet, auxVar);
+		(*cmds).err = ltsHnd(cmds, av);
 		return -1;
 	}
 	if (a == '>') {
-		(**cmd).err = gtsHnd(cmd, fstLet, auxVar);
+		(*cmds).err = gtsHnd(cmds, av);
+		return -1;
+	}
+	if (a == '|') {
+		(*cmds).err = barHnd(cmds, av);
 		return -1;
 	}
 	return 0;
 }
 
-void spcHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar)
+int tstCon(char a)
 {
-	if (!(*auxVar).gt && !(*auxVar).lt) {
-		addWrd(&((**cmd).fstWrd), fstLet);
+	return (a == ' ' || a == '&' || a == '>' || a == '<' || a == '|');
+}
+
+void addLet(struct word **fstLet, char a)
+{
+	struct word *help;
+	help = malloc(sizeof(*help));
+	(*help).letter = a;
+	(*help).next = *fstLet;
+	*fstLet = help;
+}
+
+void spcHnd(struct cmnds *cmds, struct hlpStr *av)
+{
+	if (!(*av).gt && !(*av).lt) {
+		addWrd(&(*(*cmds).fstCmd).fstWrd, &(*av).fstLet);
 		return;
 	}
-	if (*fstLet != NULL) {
-		if ((*auxVar).gt) {
-			(**cmd).output = copyWrd(fstLet);
-			(*auxVar).gt = 0;
+	if ((*av).fstLet != NULL) {
+		if ((*av).gt) {
+			(*cmds).output = copyWrd(&(*av).fstLet);
+			(*av).gt = 0;
 		} else {
-			(**cmd).input = copyWrd(fstLet);
-			(*auxVar).lt = 0;
+			(*cmds).input = copyWrd(&(*av).fstLet);
+			(*av).lt = 0;
 		}
 	}
 }
 
-int ltsHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar)
+void addWrd(struct list **fstWrd, struct word **fstLet)
 {
-	if ((*auxVar).lt && *fstLet == NULL) {
+	struct list *help;
+	if (*fstLet != NULL) {
+		help = malloc(sizeof(*help));
+		(*help).word = copyWrd(fstLet);
+		(*help).next = *fstWrd;
+		*fstWrd = help;
+	}
+}
+
+char *copyWrd(struct word **fstLet)
+{
+	char *word;
+	int i, n;
+	n = numLet(*fstLet);
+	word = malloc(n+1);
+	for(i = n - 1; i >= 0; i--) {
+		word[i] = (**fstLet).letter;
+		*fstLet = (**fstLet).next;
+	}
+	word[n] = 0;
+	delLet(fstLet);
+	return word;
+}
+
+int numLet(struct word *fstLet)
+{
+	int help = 0;
+	while(fstLet != NULL) {
+		fstLet = (*fstLet).next;
+		help++;
+	}
+	return help;
+}
+
+int ltsHnd(struct cmnds *cmds, struct hlpStr *av)
+{
+	if ((*av).lt && (*av).fstLet == NULL) {
 		return redir;
 	}
-	if ((**cmd).input != NULL || (*auxVar).lt) {
+	if ((*cmds).input != NULL || (*av).lt) {
 		return inSpec;
 	}
-	if (!(*auxVar).gt) {
-		addWrd(&((**cmd).fstWrd), fstLet);
-		(*auxVar).lt = 1;
+	if (!(*av).gt) {
+		addWrd(&(*(*cmds).fstCmd).fstWrd, &(*av).fstLet);
+		(*av).lt = 1;
 		return 0;
 	}
-	if (*fstLet == NULL) {
+	if ((*av).fstLet == NULL) {
 		return redir;
 	}
-	(**cmd).output = copyWrd(fstLet);
-	(*auxVar).gt = 0;
-	(*auxVar).lt = 1;
+	(*cmds).output = copyWrd(&(*av).fstLet);
+	(*av).gt = 0;
+	(*av).lt = 1;
 	return 0;		
 }
 
-int gtsHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar)
+int gtsHnd(struct cmnds *cmds, struct hlpStr *av)
 {
-	if ((*auxVar).last == '>') {
-		if ((*auxVar).llast == '>') {
+	if ((*av).last == '>') {
+		if ((*av).llast == '>') {
 			return redir;
 		}
-		(**cmd).append = 1;
+		(*cmds).append = 1;
 		return 0;
 	}
-	if ((*auxVar).gt && *fstLet == NULL) {
+	if ((*av).gt && (*av).fstLet == NULL) {
 		return redir;
 	}
-	if ((**cmd).output != NULL || (*auxVar).gt) {
+	if ((*cmds).output != NULL || (*av).gt) {
 		return outSpec;
 	}
-	if (!(*auxVar).lt) {
-		addWrd(&((**cmd).fstWrd), fstLet);
-		(*auxVar).gt = 1;
+	if (!(*av).lt) {
+		addWrd(&(*(*cmds).fstCmd).fstWrd, &(*av).fstLet);
+		(*av).gt = 1;
 		return 0;
 	}
-	if (*fstLet == NULL) {
+	if ((*av).fstLet == NULL) {
 		return redir;
 	}
-	(**cmd).input = copyWrd(fstLet);
-	(*auxVar).lt = 0;
-	(*auxVar).gt = 1;
+	(*cmds).input = copyWrd(&(*av).fstLet);
+	(*av).lt = 0;
+	(*av).gt = 1;
 	return 0;			
 }
 
-void endHnd(struct cmnd **cmd, struct word **fstLet, struct hlpStr *auxVar)
+int barHnd(struct cmnds *cmds, struct hlpStr *av)
 {
-	if ((*auxVar).next == '\n' && (*auxVar).inQts) {	
-		(**cmd).err = unbQts;
-	}
-	if ((**cmd).err) {
-		printe((**cmd).err);
-		return;
-	}
-	if (!(*auxVar).gt && !(*auxVar).lt) {
-		addWrd(&((**cmd).fstWrd), fstLet);
-		prpCll(cmd, (*auxVar).next);
-		return;
-	} 
-	if (*fstLet == NULL) {
-		printe(nlUnexp);
-		return;
-	} 
-	if ((*auxVar).gt) {
-		(**cmd).output = copyWrd(fstLet);
-	} else {
-		(**cmd).input = copyWrd(fstLet);
-	}
-	prpCll(cmd, (*auxVar).next);
-}	
-
-void prpCll(struct cmnd **cmd, char a)
-{	
-	char **arrWrd;
-	if ((**cmd).fstWrd != NULL) {
-		if (a == '\n') {	
-			signal(SIGCHLD, SIG_DFL);
+	struct cmnd *help;
+	if (!(*av).gt && !(*av).lt) {
+		addWrd(&(*(*cmds).fstCmd).fstWrd, &(*av).fstLet);
+	} else { 
+		if ((*av).fstLet == NULL) {
+			return nlUnexp;
+		}
+		if ((*av).gt) {
+			(*cmds).output = copyWrd(&(*av).fstLet);
+			(*av).gt = 0;
 		} else {
-			(**cmd).bckGrd = 1;
-		}
-		arrWrd = copyLst((**cmd).fstWrd);
-		cllCmd(*cmd, arrWrd);
-		free(arrWrd);
-		if (a == '\n') {
-			signal(SIGCHLD, rmvZmb);
+			(*cmds).input = copyWrd(&(*av).fstLet);
+			(*av).lt = 0;
 		}
 	}
+	if ((*(*cmds).fstCmd).fstWrd == NULL) {
+		return nllCmd;
+	}
+	help = malloc(sizeof(*help));
+	(*help).fstWrd = NULL;
+	(*help).next = (*cmds).fstCmd;
+	(*cmds).fstCmd = help;
+	return 0;
 }
 
-void cllCmd(struct cmnd *cmd, char **arrWrd)
+void endHnd(struct cmnds *cmds, struct hlpStr *av)
 {
-	int pid, fdi, fdo;
-	if (cmpStr(arrWrd[0],"cd")) {
-		chdHnd(cmd, arrWrd);
+	if ((*av).next == '\n' && (*av).inQts) {	
+		(*cmds).err = unbQts;
+	}
+	if ((*cmds).err) {
+		printe((*cmds).err);
 		return;
 	}
-	if ((fdo = openfd(cmd, output)) == -1) {
-		perror((*cmd).output);
+	if (!(*av).gt && !(*av).lt) {
+		addWrd(&(*(*cmds).fstCmd).fstWrd, &(*av).fstLet);
+	} else { 
+		if ((*av).fstLet == NULL) {
+			printe(nlUnexp);
+			return;
+		}
+		if ((*av).gt) {
+			(*cmds).output = copyWrd(&(*av).fstLet);
+		} else {
+			(*cmds).input = copyWrd(&(*av).fstLet);
+		}
+	}
+	if ((*(*cmds).fstCmd).fstWrd == NULL && (*(*cmds).fstCmd).next != NULL) {
+		printe(nllCmd);
 		return;
 	}
-	if ((fdi = openfd(cmd, input)) == -1) {
-		perror((*cmd).input);
-		return;
-	}
-	pid = fork();
-	if (!pid) {
-		clsfdc(cmd, fdi, fdo);
-		execvp(arrWrd[0],arrWrd);
-		perror(arrWrd[0]);
-		exit(1);
-	}
-	clsfdp(cmd, fdi, fdo);
-	if (!(*cmd).bckGrd) {
-		while(wait(NULL) != pid)
-		{}
-	}
+	(*cmds).bckGrd = ((*av).next == '\n') ? 0 : 1;
+	prpCll(cmds);
 }
-
-void chdHnd(struct cmnd *cmd, char **arrWrd)
-{
-	int help;
-	help = numWrd((*cmd).fstWrd);
-	if (help != 2) {
-		printe(wrArg);
-	} else {
-		if (chdir(arrWrd[1])) {
-			perror(arrWrd[1]);
-		}
-	}
-}
-
-int openfd(struct cmnd *cmd, int i)
-{
-	int fd = 0;
-	if (i == output) {
-		if ((*cmd).output != NULL) {
-			if ((*cmd).append) {
-				fd = open((*cmd).output, O_WRONLY|O_CREAT|O_APPEND, 0666);
-			} else {
-				fd = open((*cmd).output, O_WRONLY|O_CREAT|O_TRUNC, 0666);
-			}
-		}
-	} else {
-		if ((*cmd).input != NULL) {
-			fd = open((*cmd).input, O_RDONLY, 0666);
-		}
-	}
-	return fd;
-}
-
-void clsfdc(struct cmnd *cmd, int fdi, int fdo)
-{
-	if ((*cmd).input != NULL) {
-		dup2(fdi, 0);
-		close(fdi);
-	}
-	if ((*cmd).output != NULL) {
-		dup2(fdo, 1);
-		close(fdo);
-	}
-}
-
-void clsfdp(struct cmnd *cmd, int fdi, int fdo)
-{
-	if ((*cmd).input != NULL) {
-		close(fdi);
-	}
-	if ((*cmd).output != NULL) {
-		close(fdo);
-	}
-}
-
+	
 void printe(int err)
 {
 	if (err == wrArg) {
 		printf("cd: wrong number of arguments\n");
+		return;
+	}
+	if (err == nllCmd) {
+		printf("Invalid null command\n");
 		return;
 	}
 	printf("Syntax error: ");
@@ -393,6 +383,79 @@ void printe(int err)
 	}
 }
 
+void prpCll(struct cmnds *cmds)
+{	
+	if ((*(*cmds).fstCmd).fstWrd != NULL) {
+		if (!(*cmds).bckGrd) {	
+			signal(SIGCHLD, SIG_DFL);
+		}
+		if ((*(*cmds).fstCmd).next == NULL) {
+			char **arrWrd;
+			arrWrd = copyLst((*(*cmds).fstCmd).fstWrd);
+			cllCmd(cmds, arrWrd);
+			free(arrWrd);
+		} else {
+			cllCnv(cmds);
+		}
+		if (!(*cmds).bckGrd) {
+			signal(SIGCHLD, rmvZmb);
+		}
+	}
+}
+
+char **copyLst(struct list *fstWrd)
+{
+	char **arrWrd;
+	int i, n;
+	n = numWrd(fstWrd);
+	arrWrd = malloc((n+1)*sizeof(*arrWrd));
+	for(i = n-1; i >=0; i--) {
+		arrWrd[i] = (*fstWrd).word;	
+		fstWrd = (*fstWrd).next;
+	}
+	arrWrd[n] = NULL;
+	return arrWrd;
+}
+
+int numWrd(struct list *fstWrd)
+{
+	int help = 0;
+	while(fstWrd != NULL) {
+		fstWrd = (*fstWrd).next;
+		help++;
+	}
+	return help;
+}
+
+void cllCmd(struct cmnds *cmds, char **arrWrd)
+{
+	int pid, fdi, fdo;
+	if (cmpStr(arrWrd[0],"cd")) {
+		chdHnd(arrWrd);
+		return;
+	}
+	if ((fdo = openfd(cmds, output)) == -1) {
+		perror((*cmds).output);
+		return;
+	}
+	if ((fdi = openfd(cmds, input)) == -1) {
+		perror((*cmds).input);
+		return;
+	}
+	pid = fork();
+	if (!pid) {
+		clsfdc(cmds, fdi, fdo);
+		execvp(arrWrd[0],arrWrd);
+		perror(arrWrd[0]);
+		exit(1);
+	}
+	clsfdp(cmds, fdi, fdo);
+	if (!(*cmds).bckGrd) {
+		while(wait(NULL) != pid)
+		{}
+	}
+}
+
 int cmpStr(const char *a, const char *b)
 {
 	int i = 0;
@@ -402,103 +465,292 @@ int cmpStr(const char *a, const char *b)
 	return (a[i] == b[i]);
 }
 
-int tstCon(char a)
+void chdHnd(char **arrWrd)
 {
-	return (a == ' ' || a == '&' || a == '>' || a == '<');
-}
-
-char **copyLst(struct list *first)
-{
-	char **arrWrd;
-	int i, n;
-	n = numWrd(first);
-	arrWrd = malloc((n+1)*sizeof(*arrWrd));
-	for(i = n-1; i >=0; i--) {
-		arrWrd[i] = (*first).word;	
-		first = (*first).next;
+	int i = 0;
+	while(arrWrd[i] != NULL) {
+		i++;
 	}
-	arrWrd[n] = NULL;
-	return arrWrd;
-}
-
-void addLet(struct word **first, char a)
-{
-	struct word *help;
-	help = malloc(sizeof(*help));
-	(*help).letter = a;
-	(*help).next = *first;
-	*first = help;
-}
-
-void delLet(struct word **first)
-{
-	struct word *help;
-	while(*first != NULL) {
-		help = *first;
-		*first = (**first).next;
-		free(help);
-	}
-}
-
-int numLet(struct word *first)
-{
-	int help = 0;
-	while(first != NULL) {
-		first = (*first).next;
-		help++;
-	}
-	return help;
-}
-
-int numWrd(struct list *first)
-{
-	int help = 0;
-	while(first != NULL) {
-		first = (*first).next;
-		help++;
-	}
-	return help;
-}
-
-char *copyWrd(struct word **fstLet)
-{
-	char *word;
-	int i, n;
-	n = numLet(*fstLet);
-	word = malloc(n+1);
-	for(i = n - 1; i >= 0; i--) {
-		word[i] = (**fstLet).letter;
-		*fstLet = (**fstLet).next;
-	}
-	word[n] = 0;
-	delLet(fstLet);
-	return word;
-}
-
-void addWrd(struct list **first, struct word **fstLet)
-{	
-	if (*fstLet != NULL) {
-		if (*first == NULL) {
-			*first = malloc(sizeof(**first));
-			(**first).word = copyWrd(fstLet);
-			(**first).next = NULL;
-		} else {
-			struct list *help;
-			help = malloc(sizeof(*help));
-			(*help).word = copyWrd(fstLet);
-			(*help).next = *first;
-			*first = help;
+	if (i != 2) {
+		printe(wrArg);
+	} else {
+		if (chdir(arrWrd[1])) {
+			perror(arrWrd[1]);
 		}
 	}
 }
 
-void delWrd(struct list **first)
+int openfd(struct cmnds *cmds, int i)
+{
+	int fd = 0;
+	if (i == output) {
+		if ((*cmds).output != NULL) {
+			if ((*cmds).append) {
+				fd = open((*cmds).output, O_WRONLY|O_CREAT|O_APPEND, 0666);
+			} else {
+				fd = open((*cmds).output, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+			}
+		}
+	} else {
+		if ((*cmds).input != NULL) {
+			fd = open((*cmds).input, O_RDONLY, 0666);
+		}
+	}
+	return fd;
+}
+
+void clsfdc(struct cmnds *cmds, int fdi, int fdo)
+{
+	if ((*cmds).input != NULL) {
+		dup2(fdi, 0);
+		close(fdi);
+	}
+	if ((*cmds).output != NULL) {
+		dup2(fdo, 1);
+		close(fdo);
+	}
+}
+
+void clsfdp(struct cmnds *cmds, int fdi, int fdo)
+{
+	if ((*cmds).input != NULL) {
+		close(fdi);
+	}
+	if ((*cmds).output != NULL) {
+		close(fdo);
+	}
+}
+
+void cllCnv(struct cmnds *cmds)
+{
+	struct pidList *pids = NULL;
+	struct cmnd *help;
+	int pid;
+	int fd[2];
+	flipList(cmds); 
+	if ((fd[0] = openfd(cmds, input)) == -1) {
+		perror((*cmds).input);
+		return;
+	}
+	pid = fstRun(cmds, fd);
+	if (!(*cmds).bckGrd) {
+		addPid(&pids, pid);
+	}
+	help = midRun(cmds, &pids, fd);
+	if ((fd[1] = openfd(cmds, output)) == -1) {
+		perror((*cmds).output);
+		return;
+	}
+	pid = lstRun(cmds, help, fd);
+	if (!(*cmds).bckGrd) {
+		addPid(&pids, pid);
+		while (pids != NULL) {
+			pid = wait(NULL);
+			delPid(&pids, pid);
+		}
+	}
+}
+
+int fstRun(struct cmnds *cmds, int fdio[2])
+{
+	char **arrWrd;
+	int fd[2];
+	int pid;
+	arrWrd = copyLst((*(*cmds).fstCmd).fstWrd);
+	pipe(fd);
+	pid = fork();
+	if (!pid) {
+		if ((*cmds).input != NULL) {
+			dup2(fdio[0], 0);
+			close(fdio[0]);
+		}
+		dup2(fd[1],1);
+		close(fd[0]);
+		close(fd[1]);
+		execvp(arrWrd[0],arrWrd);
+		perror(arrWrd[0]);
+		exit(1);
+	}
+	free(arrWrd);
+	if ((*cmds).input != NULL) {
+		close(fdio[0]);
+	}
+	close(fd[1]);
+	fdio[0] = fd[0];
+	return pid;
+}
+
+struct cmnd *midRun(struct cmnds *cmds, struct pidList **pids, int fdio[2])
+{
+	struct cmnd *help;
+	char **arrWrd;
+	int fd[2];
+	int pid, n, i;
+	help = (*cmds).fstCmd;
+	n = numCmd(help);
+	for(i = 0; i < n-2; i++) {
+		help = (*help).next;
+		pipe(fd);
+		arrWrd = copyLst((*help).fstWrd);
+		pid = fork();
+		if (!pid) {
+			dupCls(fdio[0], fd);
+			execvp(arrWrd[0],arrWrd);
+			perror(arrWrd[0]);
+			exit(1);
+		}
+		free(arrWrd);
+		if (!(*cmds).bckGrd) {
+			addPid(pids, pid);
+		}
+		close(fdio[0]);
+		close(fd[1]);
+		fdio[0] = fd[0];
+	}
+	return (*help).next;
+}
+
+int lstRun(struct cmnds *cmds, struct cmnd *help, int fd[2])
+{
+	char **arrWrd;
+	int pid;
+	arrWrd = copyLst((*help).fstWrd);
+	pid = fork();
+	if (!pid) {
+		if ((*cmds).output != NULL) {
+			dup2(fd[1], 1);
+			close(fd[1]);
+		}
+		dup2(fd[0],0);
+		close(fd[0]);
+		execvp(arrWrd[0],arrWrd);
+		perror(arrWrd[0]);
+		exit(1);
+	}
+	free(arrWrd);
+	if ((*cmds).output != NULL) {
+		close(fd[1]);
+	}
+	close(fd[0]);
+	return pid;
+}
+
+void dupCls(int fdio, int fd[2])
+{
+	dup2(fdio, 0);
+	close(fdio);
+	dup2(fd[1],1);
+	close(fd[0]);
+	close(fd[1]);
+}
+
+void flipList(struct cmnds *cmds)
+{
+	struct cmnd *help;
+	struct cmnd *last;
+	struct cmnd *new = NULL;
+	last = (*cmds).fstCmd;
+	while(last != NULL) {
+		help = malloc(sizeof(*help));
+		(*help).fstWrd = (*last).fstWrd;
+		(*help).next = new;
+		new = help;
+		help = last;
+		last = (*last).next;
+		free(help);
+	}
+	(*cmds).fstCmd = new;
+}
+
+int numCmd(struct cmnd *fstCmd)
+{
+	int help = 0;
+	while(fstCmd != NULL) {
+		fstCmd = (*fstCmd).next;
+		help++;
+	}
+	return help;
+}
+
+void addPid(struct pidList **pids, int pid)
+{
+	struct pidList *help;
+	help = malloc(sizeof(*help));
+	(*help).pid = pid;
+	(*help).next = *pids;
+	*pids = help;
+}
+
+void delPid(struct pidList **pids, int pid)
+{
+	struct pidList *help;
+	if ((**pids).pid == pid) {
+		help = *pids;
+		*pids = (**pids).next;
+		free(help);
+		return;
+	}
+	struct pidList *list;
+	list = *pids;
+	while((*list).next != NULL) {
+		if ((*(*list).next).pid == pid) {
+			help = (*list).next;
+			(*list).next = (*(*list).next).next;
+			free(help);
+			return;
+		}
+		list = (*list).next; 
+	}
+}
+
+void ersVar(struct cmnds *cmds, struct hlpStr *av)
+{
+	delCmd(&(*cmds).fstCmd);
+	(*cmds).fstCmd = malloc(sizeof(*(*cmds).fstCmd));
+	(*(*cmds).fstCmd).fstWrd = NULL;
+	(*(*cmds).fstCmd).next = NULL;
+	if ((*cmds).output != NULL) {
+		free((*cmds).output);
+		(*cmds).output = NULL;
+	}
+	if ((*cmds).input != NULL) {	
+		free((*cmds).input);
+		(*cmds).input = NULL;
+	}
+	(*cmds).append = (*cmds).bckGrd = (*cmds).err = 0;
+	delLet(&((*av).fstLet)); 
+	(*av).llast = (*av).last = (*av).next = ' ';	
+	(*av).inQts = (*av).gt = (*av).lt = 0;
+}
+
+void delCmd(struct cmnd **fstCmd)
+{
+	struct cmnd *help;
+	while(*fstCmd != NULL) {
+		delWrd(&(**fstCmd).fstWrd);
+		help = *fstCmd;
+		*fstCmd = (**fstCmd).next;
+		free(help);
+	}
+}
+
+void delWrd(struct list **fstWrd)
 {
 	struct list *help;
-	while(*first != NULL) {
-		free((**first).word);
-		help = *first;
-		*first = (**first).next;
+	while(*fstWrd != NULL) {
+		free((**fstWrd).word);
+		help = *fstWrd;
+		*fstWrd = (**fstWrd).next;
+		free(help);
+	}
+}
+
+void delLet(struct word **fstLet)
+{
+	struct word *help;
+	while(*fstLet != NULL) {
+		help = *fstLet;
+		*fstLet = (**fstLet).next;
 		free(help);
 	}
 }
