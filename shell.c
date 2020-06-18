@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 struct word {
 	char letter;
@@ -13,19 +15,18 @@ struct list {
 
 void addLet(struct word **first, char a);
 void delLet(struct word **first);
-int numLet(struct word *fstLet);
-void delWrd(struct list **first, struct list **last);
-void prtWrd(struct list *first);
-char *copyWrd(struct word *fstLet);
-void addWrd(
-	struct list **first, 
-	struct list **last, 
-	struct word *fstLet 
-);
+void addWrd(struct list **first, struct word *fstLet);
+void delWrd(struct list **first);
+void cllCmd(struct list *first);
+char *copyWrd(struct word *first);
+char **copyLst(struct list *first); 
+int numLet(struct word *first);
+int numWrd(struct list *first);
+int cmpStr(const char *a, const char *b);
 
 int main()
 {
-	struct list *fstWrd = NULL, *lstWrd = NULL;
+	struct list *fstWrd = NULL;
 	struct word *fstLet = NULL;
 	int inQts = 0;
 	char a;
@@ -36,22 +37,22 @@ int main()
 			case ' ': 
 				if (inQts) {
 					addLet(&fstLet, a);
-				}
-				else {
-					addWrd(&fstWrd, &lstWrd, fstLet);
+				} else {
+					addWrd(&fstWrd, fstLet);
 					delLet(&fstLet);
 				}
 				break;
 			case '\n':
-				addWrd(&fstWrd, &lstWrd, fstLet);
+				addWrd(&fstWrd, fstLet);
 				delLet(&fstLet);
 				if (inQts) {
 					printf("Error: unbalanced quotes.\n>");
+				} else {
+					if (fstWrd != NULL) {
+						cllCmd(fstWrd);
+					}
 				}
-				else {
-					prtWrd(fstWrd);
-				}
-				delWrd(&fstWrd, &lstWrd);
+				delWrd(&fstWrd);
 				break;
 			case '"':
 				inQts = !inQts;
@@ -60,13 +61,71 @@ int main()
 				addLet(&fstLet, a);
 		}
 	}
-	delWrd(&fstWrd, &lstWrd);
+	delWrd(&fstWrd);
 	delLet(&fstLet);	
 	putchar('\n');
 	return 0;
 }
-					
- 
+
+void cllCmd(struct list *first)
+{
+	char **arrWrd;
+	int help;
+	
+	arrWrd = copyLst(first);
+	if (cmpStr(arrWrd[0],"cd")) {
+		help = numWrd(first);
+		if (help != 2) {
+			printf("cd: wrong number of arguments\n");
+		} else {
+			if (chdir(arrWrd[1])) {
+				perror(arrWrd[1]);
+			}
+		}
+	} else {
+		help = fork();
+		if (!help) {
+			execvp(arrWrd[0],arrWrd);
+			perror(arrWrd[0]);
+			exit(1);
+		}
+		wait(NULL);
+	}
+	free(arrWrd);
+	putchar('>');
+}
+
+int cmpStr(const char *a, const char *b)
+{
+	int i = 0;
+
+	while(a[i] && b[i]) {
+		if (a[i] != b[i]) {
+			return 0;
+		}
+		i++;
+	}
+	if (a[i] != b[i]) {
+		return 0;
+	}
+	return -1;
+}
+
+char **copyLst(struct list *first)
+{
+	char **arrWrd;
+	int i, n;
+
+	n = numWrd(first);
+	arrWrd = malloc((n+1)*sizeof(*arrWrd));
+	for(i = 0; i <= n-1; i++) {
+		arrWrd[i] = (*first).word;
+		first = (*first).next;
+	}
+	arrWrd[n] = NULL;
+	return arrWrd;
+}
+
 void addLet(struct word **first, char a)
 {
 	struct word *help;
@@ -88,12 +147,23 @@ void delLet(struct word **first)
 	}
 }
 
-int numLet(struct word *fstLet)
+int numLet(struct word *first)
 {
 	int help = 0;
 
-	while(fstLet != NULL) {
-		fstLet = (*fstLet).next;
+	while(first != NULL) {
+		first = (*first).next;
+		help++;
+	}
+	return help;
+}
+
+int numWrd(struct list *first)
+{
+	int help = 0;
+
+	while(first != NULL) {
+		first = (*first).next;
 		help++;
 	}
 	return help;
@@ -114,29 +184,27 @@ char *copyWrd(struct word *fstLet)
 	return word;
 }
 
-void addWrd(
-	struct list **first, 
-	struct list **last, 
-	struct word *fstLet 
-)
+void addWrd(struct list **first, struct word *fstLet)
 {	
 	if (fstLet != NULL) {
 		if (*first == NULL) {
 			*first = malloc(sizeof(**first));
 			(**first).word = copyWrd(fstLet);
 			(**first).next = NULL;
-			*last = *first;
-		}
-		else {
-			(**last).next = malloc(sizeof(**last));
-			*last = (**last).next;
-			(**last).word = copyWrd(fstLet);
-			(**last).next = NULL;
+		} else {
+			struct list *help = *first;
+			while((*help).next != NULL) {
+				help = (*help).next;
+			}
+			(*help).next = malloc(sizeof(*help));
+			help = (*help).next;
+			(*help).word = copyWrd(fstLet);
+			(*help).next = NULL;
 		}
 	}
 }
 
-void delWrd(struct list **first, struct list **last)
+void delWrd(struct list **first)
 {
 	struct list *help;
 	
@@ -146,21 +214,4 @@ void delWrd(struct list **first, struct list **last)
 		*first = (**first).next;
 		free(help);
 	}
-	*last = NULL;
-}
-
-void prtWrd(struct list *first)
-{
-	int i = 0;
-
-	while(first != NULL) {
-		while((*first).word[i] != 0) {
-			putchar((*first).word[i]);
-			i++;
-		}
-		first = (*first).next;
-		i = 0;
-		putchar('\n');
-	}
-	putchar('>');
 }
