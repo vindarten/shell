@@ -15,13 +15,13 @@ struct list {
 	struct list *next;
 };
 
-struct cmnd {
+struct command {
 	struct list *fstWrd;
-	struct cmnd *next;
+	struct command *next;
 };
 
-struct cmnds {
-	struct cmnd *fstCmd;
+struct command_set {
+	struct command *fstCmd;
 	char *input;
 	char *output;
 	int append;
@@ -31,9 +31,7 @@ struct cmnds {
 
 struct hlpStr {
 	struct word *fstLet;
-	char llast;
-	char last;
-	char next;
+	char before_last, last, next;
 	int inQts;
 	int gt;
 	int lt;
@@ -47,66 +45,66 @@ struct pidList {
 enum {input, output};
 enum {right, unbQts, inSpec, outSpec, redir, nlUnexp, wrArg, nllCmd};
 
-void rmvZmb(int x);
-void entLet(void);
-void initAll(struct cmnds *cmds, struct hlpStr *av);
-char entChr(struct hlpStr *av);
-int cllHnd(struct cmnds *cmds, struct hlpStr *av);
+void removeZombie(int x);
+void readCommands();
+void initAll(struct command_set *cmds, struct hlpStr *av);
+int readChar(struct hlpStr *av);
+int cllHnd(struct command_set *cmds, struct hlpStr *av);
 int tstCon(char a);
 void addLet(struct word **fstLet, char a);
-void spcHnd(struct cmnds *cmds, struct hlpStr *av);
+void spcHnd(struct command_set *cmds, struct hlpStr *av);
 void addWrd(struct list **fstWrd, struct word **fstLet);
 char *copyWrd(struct word **fstLet);
 int numLet(struct word *fstLet);
-int ltsHnd(struct cmnds *cmds, struct hlpStr *av);
-int gtsHnd(struct cmnds *cmds, struct hlpStr *av);
-int barHnd(struct cmnds *cmds, struct hlpStr *av);
-void endHnd(struct cmnds *cmds, struct hlpStr *av);
+int ltsHnd(struct command_set *cmds, struct hlpStr *av);
+int gtsHnd(struct command_set *cmds, struct hlpStr *av);
+int barHnd(struct command_set *cmds, struct hlpStr *av);
+void endHnd(struct command_set *cmds, struct hlpStr *av);
 void printe(int err);
-void prpCll(struct cmnds *cmds);
+void prpCll(struct command_set *cmds);
 char **copyLst(struct list *fstWrd); 
 int numWrd(struct list *fstWrd);
-void cllCmd(struct cmnds *cmds, char **arrWrd);
+void cllCmd(struct command_set *cmds, char **arrWrd);
 int cmpStr(const char *a, const char *b);
 void chdHnd(char **arrWrd);
-int openfd(struct cmnds *cmds, int i);
-void clsfdc(struct cmnds *cmds, int fdi, int fdo);
-void clsfdp(struct cmnds *cmds, int fdi, int fdo);
-void cllCnv(struct cmnds *cmds);
-int fstRun(struct cmnds *cmds, int fdio[2]);
-struct cmnd *midRun(struct cmnds *cmds, struct pidList **pids, int fdio[2]);
-int lstRun(struct cmnds *cmds, struct cmnd *help, int fd[2]);
+int openfd(struct command_set *cmds, int i);
+void clsfdc(struct command_set *cmds, int fdi, int fdo);
+void clsfdp(struct command_set *cmds, int fdi, int fdo);
+void cllCnv(struct command_set *cmds);
+int fstRun(struct command_set *cmds, int fdio[2]);
+struct command *midRun(struct command_set *cmds, struct pidList **pids, int fdio[2]);
+int lstRun(struct command_set *cmds, struct command *help, int fd[2]);
 void dupCls(int fdio, int fd[2]);
-void flipList(struct cmnds *cmds);
-int numCmd(struct cmnd *fstCmd);
+void flipList(struct command_set *cmds);
+int numCmd(struct command *fstCmd);
 void addPid(struct pidList **pids, int pid);
 void delPid(struct pidList **pids, int pid);
-void ersVar(struct cmnds *cmds, struct hlpStr *av);
-void delCmd(struct cmnd **fstCmd);
+void ersVar(struct command_set *cmds, struct hlpStr *av);
+void delCmd(struct command **fstCmd);
 void delWrd(struct list **fstWrd);
 void delLet(struct word **fstLet);
 
 int main()
 {
-	signal(SIGCHLD, rmvZmb);
-	putchar('>');
-	entLet();
-	putchar('\n');
+	signal(SIGCHLD, removeZombie);
+	readCommands();
 	return 0;
 }
 
-void rmvZmb(int x)
+void removeZombie(int x)
 {
 	while(waitpid(-1, NULL, WNOHANG) > 0)
 	{}
 }
 
-void entLet(void)
+void readCommands()
 {
-	struct cmnds cmds;
+	struct command_set cmds;
 	struct hlpStr av;
 	initAll(&cmds, &av);
-	while(entChr(&av) != EOF) {
+	
+	putchar('>');
+	while(readChar(&av)) {
 		if (!cmds.err) {
 			if (cllHnd(&cmds, &av)) {
 				continue;
@@ -122,10 +120,12 @@ void entLet(void)
 		}
 		addLet(&av.fstLet, av.next);
 	}
+	putchar('\n');
+	
 	ersVar(&cmds, &av);
 }
 
-void initAll(struct cmnds *cmds, struct hlpStr *av)
+void initAll(struct command_set *cmds, struct hlpStr *av)
 {
 	(*cmds).fstCmd = malloc(sizeof(*(*cmds).fstCmd));
 	(*(*cmds).fstCmd).fstWrd = NULL;
@@ -133,19 +133,26 @@ void initAll(struct cmnds *cmds, struct hlpStr *av)
 	(*cmds).input = (*cmds).output = NULL;
 	(*cmds).append = (*cmds).bckGrd = (*cmds).err = 0;
 	(*av).fstLet = NULL;
-	(*av).llast = (*av).last = (*av).next = ' ';	
+	(*av).before_last = (*av).last = (*av).next = ' ';	
 	(*av).inQts = (*av).gt = (*av).lt = 0;
 }
 
-char entChr(struct hlpStr *av)
+int readChar(struct hlpStr *av)
 {
-	(*av).llast = (*av).last;
-	(*av).last = (*av).next;
-	(*av).next = getchar();
-	return (*av).next;
+	av->before_last = av->last;
+	av->last = av->next;
+
+	int value = getchar();
+	if(value != EOF) {
+		av->next = value;
+		return 1;
+	} else {
+		av->next = 0;
+		return 0;
+	}
 }
 
-int cllHnd(struct cmnds *cmds, struct hlpStr *av)
+int cllHnd(struct command_set *cmds, struct hlpStr *av)
 {
 	char a;
 	a = (*av).next;
@@ -190,7 +197,7 @@ void addLet(struct word **fstLet, char a)
 	*fstLet = help;
 }
 
-void spcHnd(struct cmnds *cmds, struct hlpStr *av)
+void spcHnd(struct command_set *cmds, struct hlpStr *av)
 {
 	if (!(*av).gt && !(*av).lt) {
 		addWrd(&(*(*cmds).fstCmd).fstWrd, &(*av).fstLet);
@@ -243,7 +250,7 @@ int numLet(struct word *fstLet)
 	return help;
 }
 
-int ltsHnd(struct cmnds *cmds, struct hlpStr *av)
+int ltsHnd(struct command_set *cmds, struct hlpStr *av)
 {
 	if ((*av).lt && (*av).fstLet == NULL) {
 		return redir;
@@ -265,10 +272,10 @@ int ltsHnd(struct cmnds *cmds, struct hlpStr *av)
 	return 0;		
 }
 
-int gtsHnd(struct cmnds *cmds, struct hlpStr *av)
+int gtsHnd(struct command_set *cmds, struct hlpStr *av)
 {
 	if ((*av).last == '>') {
-		if ((*av).llast == '>') {
+		if ((*av).before_last == '>') {
 			return redir;
 		}
 		(*cmds).append = 1;
@@ -294,9 +301,9 @@ int gtsHnd(struct cmnds *cmds, struct hlpStr *av)
 	return 0;			
 }
 
-int barHnd(struct cmnds *cmds, struct hlpStr *av)
+int barHnd(struct command_set *cmds, struct hlpStr *av)
 {
-	struct cmnd *help;
+	struct command *help;
 	if (!(*av).gt && !(*av).lt) {
 		addWrd(&(*(*cmds).fstCmd).fstWrd, &(*av).fstLet);
 	} else { 
@@ -321,7 +328,7 @@ int barHnd(struct cmnds *cmds, struct hlpStr *av)
 	return 0;
 }
 
-void endHnd(struct cmnds *cmds, struct hlpStr *av)
+void endHnd(struct command_set *cmds, struct hlpStr *av)
 {
 	if ((*av).next == '\n' && (*av).inQts) {	
 		(*cmds).err = unbQts;
@@ -383,7 +390,7 @@ void printe(int err)
 	}
 }
 
-void prpCll(struct cmnds *cmds)
+void prpCll(struct command_set *cmds)
 {	
 	if ((*(*cmds).fstCmd).fstWrd != NULL) {
 		if (!(*cmds).bckGrd) {	
@@ -398,7 +405,7 @@ void prpCll(struct cmnds *cmds)
 			cllCnv(cmds);
 		}
 		if (!(*cmds).bckGrd) {
-			signal(SIGCHLD, rmvZmb);
+			signal(SIGCHLD, removeZombie);
 		}
 	}
 }
@@ -427,7 +434,7 @@ int numWrd(struct list *fstWrd)
 	return help;
 }
 
-void cllCmd(struct cmnds *cmds, char **arrWrd)
+void cllCmd(struct command_set *cmds, char **arrWrd)
 {
 	int pid, fdi, fdo;
 	if (cmpStr(arrWrd[0],"cd")) {
@@ -480,7 +487,7 @@ void chdHnd(char **arrWrd)
 	}
 }
 
-int openfd(struct cmnds *cmds, int i)
+int openfd(struct command_set *cmds, int i)
 {
 	int fd = 0;
 	if (i == output) {
@@ -499,7 +506,7 @@ int openfd(struct cmnds *cmds, int i)
 	return fd;
 }
 
-void clsfdc(struct cmnds *cmds, int fdi, int fdo)
+void clsfdc(struct command_set *cmds, int fdi, int fdo)
 {
 	if ((*cmds).input != NULL) {
 		dup2(fdi, 0);
@@ -511,7 +518,7 @@ void clsfdc(struct cmnds *cmds, int fdi, int fdo)
 	}
 }
 
-void clsfdp(struct cmnds *cmds, int fdi, int fdo)
+void clsfdp(struct command_set *cmds, int fdi, int fdo)
 {
 	if ((*cmds).input != NULL) {
 		close(fdi);
@@ -521,10 +528,10 @@ void clsfdp(struct cmnds *cmds, int fdi, int fdo)
 	}
 }
 
-void cllCnv(struct cmnds *cmds)
+void cllCnv(struct command_set *cmds)
 {
 	struct pidList *pids = NULL;
-	struct cmnd *help;
+	struct command *help;
 	int pid;
 	int fd[2];
 	flipList(cmds); 
@@ -551,7 +558,7 @@ void cllCnv(struct cmnds *cmds)
 	}
 }
 
-int fstRun(struct cmnds *cmds, int fdio[2])
+int fstRun(struct command_set *cmds, int fdio[2])
 {
 	char **arrWrd;
 	int fd[2];
@@ -580,9 +587,9 @@ int fstRun(struct cmnds *cmds, int fdio[2])
 	return pid;
 }
 
-struct cmnd *midRun(struct cmnds *cmds, struct pidList **pids, int fdio[2])
+struct command *midRun(struct command_set *cmds, struct pidList **pids, int fdio[2])
 {
-	struct cmnd *help;
+	struct command *help;
 	char **arrWrd;
 	int fd[2];
 	int pid, n, i;
@@ -610,7 +617,7 @@ struct cmnd *midRun(struct cmnds *cmds, struct pidList **pids, int fdio[2])
 	return (*help).next;
 }
 
-int lstRun(struct cmnds *cmds, struct cmnd *help, int fd[2])
+int lstRun(struct command_set *cmds, struct command *help, int fd[2])
 {
 	char **arrWrd;
 	int pid;
@@ -644,11 +651,11 @@ void dupCls(int fdio, int fd[2])
 	close(fd[1]);
 }
 
-void flipList(struct cmnds *cmds)
+void flipList(struct command_set *cmds)
 {
-	struct cmnd *help;
-	struct cmnd *last;
-	struct cmnd *new = NULL;
+	struct command *help;
+	struct command *last;
+	struct command *new = NULL;
 	last = (*cmds).fstCmd;
 	while(last != NULL) {
 		help = malloc(sizeof(*help));
@@ -662,7 +669,7 @@ void flipList(struct cmnds *cmds)
 	(*cmds).fstCmd = new;
 }
 
-int numCmd(struct cmnd *fstCmd)
+int numCmd(struct command *fstCmd)
 {
 	int help = 0;
 	while(fstCmd != NULL) {
@@ -703,7 +710,7 @@ void delPid(struct pidList **pids, int pid)
 	}
 }
 
-void ersVar(struct cmnds *cmds, struct hlpStr *av)
+void ersVar(struct command_set *cmds, struct hlpStr *av)
 {
 	delCmd(&(*cmds).fstCmd);
 	(*cmds).fstCmd = malloc(sizeof(*(*cmds).fstCmd));
@@ -719,13 +726,13 @@ void ersVar(struct cmnds *cmds, struct hlpStr *av)
 	}
 	(*cmds).append = (*cmds).bckGrd = (*cmds).err = 0;
 	delLet(&((*av).fstLet)); 
-	(*av).llast = (*av).last = (*av).next = ' ';	
+	(*av).before_last = (*av).last = (*av).next = ' ';	
 	(*av).inQts = (*av).gt = (*av).lt = 0;
 }
 
-void delCmd(struct cmnd **fstCmd)
+void delCmd(struct command **fstCmd)
 {
-	struct cmnd *help;
+	struct command *help;
 	while(*fstCmd != NULL) {
 		delWrd(&(**fstCmd).fstWrd);
 		help = *fstCmd;
