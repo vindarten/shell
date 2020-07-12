@@ -7,4 +7,6 @@ make
 ```
 
 ## Using
+```
 ./shell
+```
